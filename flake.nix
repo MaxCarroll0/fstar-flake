@@ -51,6 +51,45 @@
         }
       );
 
+      lib = eachSystem (
+        system: pkgs: {
+          mkBuild =
+            {
+              src,
+              name ? "fstar-build",
+              strict ? false,
+            }:
+            pkgs.stdenv.mkDerivation {
+              inherit name;
+              src = nixpkgs.lib.cleanSourceWith {
+                inherit src;
+                filter =
+                  path: _type:
+                  !(builtins.elem (baseNameOf path) [
+                    ".git"
+                    ".lake"
+                    ".direnv"
+                    "_build"
+                    "latex"
+                    "output"
+                  ]);
+              };
+              buildPhase = ''
+                export HOME="$TMPDIR"
+                mkdir -p "$out"
+                set +e
+                ${self.packages.${system}.typecheck}/bin/typecheck-fstar > "$out/typecheck.log" 2>&1
+                status=$?
+                set -e
+                if [ "$status" -eq 0 ]; then echo PASS > "$out/status"; else echo "FAIL ($status)" > "$out/status"; fi
+                tail -n 20 "$out/typecheck.log"
+                ${if strict then ''[ "$status" -eq 0 ] || exit "$status"'' else ""}
+              '';
+              installPhase = "true";
+            };
+        }
+      );
+
       devShells = eachSystem (
         system: pkgs: {
           default = pkgs.mkShell {
