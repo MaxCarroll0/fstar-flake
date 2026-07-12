@@ -59,14 +59,10 @@
                 echo "typecheck-fstar: no .fst or .fsti files under $PWD" >&2
                 exit 1
               fi
-              includes=()
-              while IFS= read -r d; do
-                includes+=(--include "$d")
-              done < <(printf '%s\n' "''${files[@]}" | xargs -n1 dirname | sort -u)
               fail=0
               for f in "''${files[@]}"; do
                 echo "-- fstar $f"
-                fstar.exe "''${includes[@]}" "$f" || fail=1
+                fstar.exe --include "$(dirname "$f")" "$f" || fail=1
               done
               if (( fail )); then echo "FAIL  F*"; exit 1; else echo "PASS  F*"; fi
             '';
