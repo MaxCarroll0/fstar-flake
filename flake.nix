@@ -22,6 +22,29 @@
     {
       packages = eachSystem (
         system: pkgs: rec {
+          fmt = pkgs.writeShellApplication {
+            name = "fmt-fstar";
+            text = ''
+              if (( $# )); then files=("$@"); else mapfile -t files < <(git ls-files 2>/dev/null); fi
+              for f in "''${files[@]}"; do
+                [[ -f "$f" && "$f" =~ \.fsti?$ ]] || continue
+                sed -i 's/[ \t]*$//' "$f"
+                if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then echo >> "$f"; fi
+              done
+            '';
+          };
+
+          pre-commit-hook = pkgs.writeShellScript "fmt-pre-commit" ''
+            set -euo pipefail
+            mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACM)
+            (( ''${#staged[@]} )) || exit 0
+            for fmt in fmt-lean fmt-agda fmt-isabelle fmt-fstar fmt-coq fmt-org fmt-ocaml; do
+              command -v "$fmt" >/dev/null 2>&1 || continue
+              "$fmt" "''${staged[@]}"
+            done
+            git add -- "''${staged[@]}"
+          '';
+
           fstar = pkgs.fstar or (import nixpkgs-unstable { inherit system; }).fstar;
 
           typecheck = pkgs.writeShellApplication {
@@ -96,7 +119,14 @@
             packages = [
               self.packages.${system}.fstar
               self.packages.${system}.typecheck
+              self.packages.${system}.fmt
             ];
+            shellHook = ''
+              if [ -d .git ] && [ ! -e .git/hooks/pre-commit ]; then
+                install -m 755 ${self.packages.${system}.pre-commit-hook} .git/hooks/pre-commit
+                echo "fmt pre-commit hook installed"
+              fi
+            '';
           };
         }
       );
@@ -107,7 +137,13 @@
             type = "app";
             program = "${self.packages.${system}.typecheck}/bin/typecheck-fstar";
           };
+          fmt = {
+            type = "app";
+            program = "${self.packages.${system}.fmt}/bin/fmt-fstar";
+          };
         }
       );
+
+      formatter = eachSystem (system: pkgs: pkgs.nixfmt-rfc-style);
     };
 }
